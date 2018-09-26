@@ -8,6 +8,26 @@ fn assert_opt_eq<V: PartialEq>(opt: Option<&V>, v: V) {
 }
 
 #[test]
+fn test_front_n() {
+    let mut map = LinkedHashMap::new();
+    map.insert(1, 10);
+    map.insert(2, 20);
+    map.insert(3, 30);
+    map.insert(4, 40);
+    
+    let f2 = vec![(&1, &10), (&2, &20)];
+    let f4 = vec![(&1, &10), (&2, &20), (&3, &30), (&4, &40)];
+
+    assert_eq!(map.front_n(2), f2);
+    assert_eq!(map.front_n(5), f4);
+
+    map.insert_front(5, 50);
+
+    let f5 = vec![(&5, &50), (&1, &10)];
+    assert_eq!(map.front_n(2), f5);
+}
+
+#[test]
 fn test_insert_and_get() {
     let mut map = LinkedHashMap::new();
     map.insert(1, 10);

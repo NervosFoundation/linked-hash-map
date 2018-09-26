@@ -145,6 +145,16 @@ impl<K, V, S> LinkedHashMap<K, V, S> {
         }
     }
 
+    #[inline]
+    fn append(&mut self, node: *mut Node<K, V>) {
+        unsafe {
+            (*node).prev = (*self.head).prev;
+            (*node).next = self.head;
+            (*self.head).prev = node;
+            (*(*node).prev).next = node;
+        }
+    }
+
     // Caller must check `!self.head.is_null()`
     unsafe fn drop_entries(&mut self) {
         let mut cur = (*self.head).next;
@@ -337,6 +347,45 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
         }
         old_val
     }
+    
+    ///Insert a node in the front of the queue
+    pub fn insert_front(&mut self, k: K, v: V) -> Option<V> {
+        self.ensure_guard_node();
+
+        let (node, old_val) = match self.map.get(&KeyRef{k: &k}) {
+            Some(node) => {
+                let old_val = unsafe { ptr::replace(&mut (**node).value, v) };
+                (*node, Some(old_val))
+            }
+            None => {
+                let node = if self.free.is_null() {
+                    Box::into_raw(Box::new(Node::new(k, v)))
+                } else {
+                    // use a recycled box
+                    unsafe {
+                        let free = self.free;
+                        self.free = (*free).next;
+                        ptr::write(free, Node::new(k, v));
+                        free
+                    }
+                };
+                (node, None)
+            }
+        };
+        match old_val {
+            Some(_) => {
+                // Existing node, just update LRU position
+                self.detach(node);
+                self.append(node);
+            }
+            None => {
+                let keyref = unsafe { &(*node).key };
+                self.map.insert(KeyRef{k: keyref}, node);
+                self.append(node);
+            }
+        }
+        old_val
+    }
 
     /// Checks if the map contains the given key.
     pub fn contains_key<Q: ?Sized>(&self, k: &Q) -> bool where K: Borrow<Q>, Q: Eq + Hash {
@@ -504,9 +553,29 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
             return None
         }
         let lru = unsafe { (*self.head).prev };
-        self.map
-            .get(&KeyRef{k: unsafe { &(*lru).key }})
-            .map(|e| unsafe { (&(**e).key, &(**e).value) })
+        
+        Some(unsafe { (&(*lru).key, &(*lru).value) })
+    }
+    
+    /// Get n values from the front
+    #[inline]
+    pub fn front_n(&self, n: usize) -> Vec<(&K, &V)> {
+        let mut r = Vec::new();
+        let len = self.len();
+
+        let m = if n > len { len } else { n };
+        unsafe {
+            let mut cur = (*self.head).prev;
+            for _ in 0..m {
+                if cur.is_null() {
+                    break;
+                }
+
+                r.push((&(*cur).key, &(*cur).value));
+                cur = (*cur).prev;
+            }
+        }
+        r
     }
 
     /// Removes the last entry.
@@ -554,9 +623,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
             return None
         }
         let mru = unsafe { (*self.head).next };
-        self.map
-            .get(&KeyRef{k: unsafe { &(*mru).key }})
-            .map(|e| unsafe { (&(**e).key, &(**e).value) })
+        Some(unsafe { (&(*mru).key, &(*mru).value) })
     }
 
     /// Returns the number of key-value pairs in the map.
