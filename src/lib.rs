@@ -561,9 +561,9 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     #[inline]
     pub fn front_n(&self, n: usize) -> Vec<(&K, &V)> {
         if self.is_empty() {
-            return None;
+            return Vec::new();
         }
-        
+
         let mut r = Vec::new();
         let len = self.len();
 
